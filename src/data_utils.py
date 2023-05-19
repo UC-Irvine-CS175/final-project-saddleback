@@ -43,8 +43,6 @@ Notes:
     s3_client = boto3.client('s3', config=config)
 
 """
-import csv 
-
 import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
@@ -56,6 +54,7 @@ from sklearn.model_selection import train_test_split
 import pyprojroot
 import sys
 sys.path.append(str(pyprojroot.here()))
+# print(sys.path)
 
 
 def get_bytesio_from_s3(
@@ -74,24 +73,12 @@ def get_bytesio_from_s3(
         BytesIO: BytesIO object from the file contents
     """
     # use the S3 client to read the contents of the file into memory
-    # create a BytesIO object from the file contents
-
-    # Create an S3 client
-    
-    # Retrieve the object from S3
     response = s3_client.get_object(Bucket=bucket_name, Key=file_path)
+    file_contents = response["Body"].read()
 
-    # Access the body of the response, which contains the object's content
-    # the response object contains various metadata and information about the object, 
-    # including the actual content in the Body attribute.
-    object_data = response['Body'].read()
-
-    # Create a BytesIO object from the retrieved data
-    bytes_io = BytesIO(object_data)
-    return bytes_io
-
-    # Now you can work with the BytesIO object
-    # For example, you can read the contents or pass it to other functions that accept file-like objects
+    # create a BytesIO object from the file contents
+    file_buffer = BytesIO(file_contents)
+    return file_buffer
 
 
 def get_file_from_s3(
@@ -104,32 +91,23 @@ def get_file_from_s3(
     args:
       s3_client (boto3.client): s3 client should be configured for open UNSIGNED signature.
       bucket_name (str): name of bucket from AWS open source registry.
-      s3_file_path (str): full blob/file path name from aws including file name and extension.
-      local_file_path (str): user's local directory.
+      s3_file_path (str): blob/file path name from aws
+      local_file_path (str): file path for user's local directory.
 
     returns:
       str: local file path with naming convention of the file that was downloaded from s3 bucket
     """
+    # If time: add in error handling for string formatting
+    
+    # os.makedirs(os.path.join(sys.path[0], local_file_path), exist_ok=True)
+    os.makedirs(local_file_path, exist_ok=True)
 
-    # Create the directory if it does not exist
-    # check if exists
-    if not os.path.exists(local_file_path):
-        #if not, make one
-        os.makedirs(local_file_path)
+    # Create local file path with file having the same name as the file in the s3 bucket
+    new_file_path = f"{local_file_path}/{s3_file_path.split('/')[-1]}"
 
-    # Create path with local directory provided by the userfile and the name of the s3 file of interest
-    # derived from the s3_file_path
-    file = os.path.split(s3_file_path)[1]
-    full_path = os.path.join(local_file_path, file)
-    if not os.path.exists(full_path):
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-    # Create an S3 client
-    s3_client.download_file(bucket_name, s3_file_path, full_path)
-
-    return full_path
-
-    #raise NotImplementedError
+    # Download file
+    s3_client.download_file(bucket_name, s3_file_path, new_file_path)
+    return new_file_path
 
 
 def save_tiffs_local_from_s3(
@@ -141,30 +119,26 @@ def save_tiffs_local_from_s3(
 ) -> None:
     """
     This function retrieves tiff files from a locally stored csv file containing specific aws s3 bucket
-    filenames, constructs the appropriate paths to retrieve the files of interest locally to the user's 
-    machine following the same naming convention as the files from s3.
+    blob/file paths and saves the files of interest the same filepath on the user's machine following
+    the same naming convention as the files from s3.
 
     args:
       s3_client (boto3.client): s3 client should be configured for open UNSIGNED signature.
       bucket_name (str): name of bucket from AWS open source registry.
       s3_path (str): blob/file directory where files of interest reside in s3 from AWS
-      local_fnames_meta_path (str): file path for user's local directory containing the csv file containing the filenames
+      local_fnames_meta_path (str): file path for user's local directory containing the csv file containing the blob/file paths
       save_file_path (str): file path for user's local directory where files of interest will be saved
     returns:
       None
     """
-
     # Get s3_file_paths from local_fnames_meta_path csv file
-    df= pd.read_csv(local_fnames_meta_path, usecols=["filename"])
-    file_names = df["filename"]
+    df = pd.read_csv(local_fnames_meta_path)
+    s3_file_paths = df["filename"].values.tolist()
 
-    # Download files after constructing s3 full paths including the filenames from the csv file
-    # Call get_file_from_s3 function for each s3_file_path in s3_file_paths
-
-    for file_name in file_names:
-        get_file_from_s3(s3_client, bucket_name, s3_path + "/" + file_name, save_file_path) 
-
-    #raise NotImplementedError
+    # Download files because the meta.csv file entries do not contain the full paths
+    for s3_file_path in s3_file_paths:
+        s3_file_path_full = f"{s3_path}/{s3_file_path}"
+        get_file_from_s3(s3_client, bucket_name, s3_file_path_full, save_file_path)
 
 
 def export_subset_meta_dose_hr(
@@ -174,7 +148,7 @@ def export_subset_meta_dose_hr(
     out_dir_csv: str
 ) -> tuple:
     """
-    This function opens a csv file that contains the filenames of the bps microscopy data from the 
+    This function opens a csv file that contains the filepaths of the bps microscopy data from the 
     s3 bucket saved either locally or as a file_buffer object as a pandas dataframe. The dataframe
     is then sliced over the attributes of interest and written to another csv file for data 
     versioning.
@@ -190,50 +164,59 @@ def export_subset_meta_dose_hr(
       Tuple[str, int]: a tuple of the output csv file path and the number of rows in the output csv 
       file
     """
-    # Create output directory out_dir_csv if it does not exist
-    if not os.path.exists(out_dir_csv):
-        #if not, make one
-        os.makedirs(out_dir_csv)
-
-
+    os.makedirs(out_dir_csv, exist_ok=True)
+    
     # Load csv file into pandas DataFrame
-    csv_data_frame = pd.read_csv(in_csv_path_local)
+    meta_df = pd.read_csv(in_csv_path_local)
+    if dose_Gy_specifier not in ["hi", "med", "low"]:
+        raise ValueError("dose_Gy must be one of ['hi', 'med', 'low']")
 
-    # Check that dose_Gy and hr_post_exposure_val are valid
+    if hr_post_exposure_val not in [4, 24, 48]:
+        raise ValueError("hr_post_exposure_val must be one of [4, 24, 48]")
 
-    #               low, med, hi
     # Fe dose_Gy = [0.0, 0.3, 0.82]
     # Xray dose_Gy = [0.0, 0.1, 1.0]
-    if ((csv_data_frame["particle_type"] == "Fe") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.3, 0.82]))).any():
-        raise Exception("One or more Fe dose values are not valid")
-    
-    if ((csv_data_frame["particle_type"] == "X-ray") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.1, 1.0]))).any():
-        raise Exception("One or more X-ray dose values are not valid")
-    
-    if ((~csv_data_frame["hr_post_exposure"].isin([4, 24, 48]))).any():     # ~ is the bitwise NOT operator. Flips the bits of the operand.
-        raise Exception("One or more exposure values are not valid")
-
+    if dose_Gy_specifier == "hi":
+        dose_Gy_val = 0.82
+    elif dose_Gy_specifier == "med":
+        dose_Gy_val = 0.1
+    else:
+        dose_Gy_val = 0.0
     # Slice DataFrame by attributes of interest
-    Fe_dose_gy = {'low': 0.0, 'med': 0.3, 'hi': 0.82}
-    Xray_dose_gy = {'low': 0.0, 'med': 0.1, 'hi': 1.0}
-
-    csv_data_frame = csv_data_frame[(csv_data_frame["hr_post_exposure"] == hr_post_exposure_val) & ((csv_data_frame["dose_Gy"] >= Fe_dose_gy[dose_Gy_specifier]) & (csv_data_frame["particle_type"] == "Fe") | (csv_data_frame["dose_Gy"] >= Xray_dose_gy[dose_Gy_specifier]) & (csv_data_frame["particle_type"] == "X-ray"))]
-
+    if dose_Gy_specifier == "hi":
+        df_selection = meta_df[
+        (meta_df["dose_Gy"] >= dose_Gy_val)
+        & (meta_df["hr_post_exposure"] == hr_post_exposure_val)
+        ]
+    elif dose_Gy_specifier == "med":
+        df_selection = meta_df[
+        ((meta_df["dose_Gy"] >= dose_Gy_val)
+        & (meta_df["dose_Gy"] < 0.82))
+        & (meta_df["hr_post_exposure"] == hr_post_exposure_val)
+        ]
+    else:
+        df_selection = meta_df[
+        (meta_df["dose_Gy"] == 0.0)
+        & (meta_df["hr_post_exposure"] == hr_post_exposure_val)
+        ]
 
     # Write sliced DataFrame to output csv file with same name as input csv file with 
     # _dose_hr_post_exposure.csv appended
-    file = os.path.splitext(in_csv_path_local)[0]
-    new_file_path = os.path.join(out_dir_csv, file + "_dose_" + dose_Gy_specifier + "_hr_" + str(hr_post_exposure_val) + "_post_exposure.csv")
-
-    # Construct output csv file path using out_dir_csv and the name of the input csv file
-    # with the dose_Gy and hr_post_exposure_val appended to the name of the input csv file
-    # for data versioning. 
-    csv_data_frame.to_csv(new_file_path)
-
-    # Write sliced DataFrame to output csv file with name constructed above
-    return(new_file_path, csv_data_frame.shape[0])
+    path_list = in_csv_path_local.split("/")
+    # new_path_list = path_list[0:-1]             # new_path_list = ["data", "interim"]
+    name_file = path_list[-1].split(".")[0]     # name_file == 'meta'
     
-    #raise NotImplementedError
+    # out_csv_path_local is relative to the CWD
+    out_csv_path_local = (
+        # "/".join(new_path_list)
+        str(out_dir_csv)
+        + "/"
+        + f"{name_file}_dose_{dose_Gy_specifier}_hr_{hr_post_exposure_val}_post_exposure.csv"
+    )
+
+    df_selection.to_csv(out_csv_path_local, index=False)
+    new_size = df_selection.shape[0]
+    return (out_csv_path_local, new_size)
     
 def train_test_split_subset_meta_dose_hr(
         subset_meta_dose_hr_csv_path: str,
@@ -243,7 +226,7 @@ def train_test_split_subset_meta_dose_hr(
         stratify_col: str = None
         ) -> tuple:
     """
-    This function reads in a csv file containing the filenames of the bps microscopy data for
+    This function reads in a csv file containing the filepaths of the bps microscopy data for
     a subset selected by the dose_Gy and hr_post_exposure attributes. The function then opens
     the file as a pandas dataframe and splits the dataframe into train and test sets using
     sklearn.model_selection.train_test_split. The train and test dataframes are then exported
@@ -262,32 +245,60 @@ def train_test_split_subset_meta_dose_hr(
     returns:
         Tuple[str, str]: a tuple of the output csv file paths for the train and test sets
     """
-    if not os.path.exists(out_dir_csv):
-        os.makedirs(out_dir_csv)
 
-    # Load csv file into pandas DataFrame and use the train_test_split function to split the
-    # DataFrame into train and test sets
-    df = pd.read_csv(subset_meta_dose_hr_csv_path)
-    train, test = train_test_split(df, test_size=test_size, random_state=random_state, stratify=df[stratify_col])
+    os.makedirs(out_dir_csv, exist_ok=True)
 
-    # Rewrite index numbers for both train and test sets to conform to order in new dataframe
-    # (otherwise, index numbers will be out of order)
-    train.reset_index(inplace=True, drop=True)
-    test.reset_index(inplace=True, drop=True)
+    # Load csv file into pandas DataFrame
+    meta_df = pd.read_csv(subset_meta_dose_hr_csv_path)
+    train_df, test_df = train_test_split(meta_df,
+                                         test_size=test_size,
+                                         random_state=random_state,
+                                         stratify=meta_df[stratify_col])
+
+    # Rewrite index numbers to conform to order in new dataframe
+    train_df.reset_index(drop=True, inplace=True)
+    test_df.reset_index(drop=True, inplace=True)
 
     # Write train and test DataFrames to output csv files with same name as input csv file with
     # _train.csv or _test.csv appended
-    train_file_path = os.path.join(out_dir_csv, os.path.splitext(subset_meta_dose_hr_csv_path)[0] + "_train.csv")
-    test_file_path = os.path.join(out_dir_csv, os.path.splitext(subset_meta_dose_hr_csv_path)[0] + "_test.csv")
-    train.to_csv(train_file_path)
-    test.to_csv(test_file_path)
+    path_list = subset_meta_dose_hr_csv_path.split("/")
+    # new_path_list = path_list[0:-1]
+    name_file = path_list[-1].split(".")[0]
+    test_csv_path = (
+        # "/".join(new_path_list)
+        str(out_dir_csv)
+        + "/"
+        + f"{name_file}_test.csv"
+    )
+    train_csv_path = (
+        # "/".join(new_path_list)
+        str(out_dir_csv)
+        + "/"
+        + f"{name_file}_train.csv"
+    )
+    train_df.to_csv(train_csv_path, index=False)
+    test_df.to_csv(test_csv_path, index=False)
+    return train_csv_path, test_csv_path
 
-    return (train_file_path, test_file_path)
-    #return NotImplementedError
+# 4/29/23 - Moved to augmentation.py
+# def visualize_image_w_label(img_path: str, label: str) -> None:
+#     """
+#     This function reads in an image file path and a label and displays the image with the label
+#     as the title.
+
+#     args:
+#         img_path (str): a string of the image file path
+#         label (str): a string of the label
+#     """
+#     img = Image.open(img_path)
+#     plt.imshow(img)
+#     plt.title(label)
+#     plt.savefig(f"{label}.png")
+
 
 def main():
     """
-    A driver function for testing the functions in this module. Use if you like.
+    A driver function for testing the functions in this module. 
     """
 
     output_dir = '../data/processed'
@@ -313,7 +324,7 @@ def main():
         in_csv_path_local=local_new_path_fname,
         out_dir_csv=output_dir)
 
-    print(subset_size)
+    print(f'hi Gy: {subset_size}')
 
     subset_new_path_fname, subset_size = export_subset_meta_dose_hr(
         dose_Gy_specifier='med',
@@ -321,14 +332,14 @@ def main():
         in_csv_path_local=local_new_path_fname,
         out_dir_csv=output_dir)
     
-    print(subset_size)
+    print(f'med Gy:{subset_size}')
 
     subset_new_path_fname, subset_size = export_subset_meta_dose_hr(
         dose_Gy_specifier='low',
         hr_post_exposure_val=4,
         in_csv_path_local=local_new_path_fname,
         out_dir_csv=output_dir)
-    
+    print(f'low Gy:{subset_size}')
 
     train_test_split_subset_meta_dose_hr(
         subset_meta_dose_hr_csv_path=subset_new_path_fname,
