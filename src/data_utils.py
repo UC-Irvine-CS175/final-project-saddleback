@@ -170,7 +170,7 @@ def save_tiffs_local_from_s3(
 def export_subset_meta_dose_hr(
     dose_Gy_specifier: str,
     hr_post_exposure_val: int,
-    in_csv_path_local: str,             # path includes name of file w/ extension
+    in_csv_path_local: str,
     out_dir_csv: str
 ) -> tuple:
     """
@@ -190,50 +190,48 @@ def export_subset_meta_dose_hr(
       Tuple[str, int]: a tuple of the output csv file path and the number of rows in the output csv 
       file
     """
+    import pandas as pd
+    import os
+
     # Create output directory out_dir_csv if it does not exist
     if not os.path.exists(out_dir_csv):
-        #if not, make one
         os.makedirs(out_dir_csv)
-
 
     # Load csv file into pandas DataFrame
     csv_data_frame = pd.read_csv(in_csv_path_local)
 
     # Check that dose_Gy and hr_post_exposure_val are valid
-
-    #               low, med, hi
-    # Fe dose_Gy = [0.0, 0.3, 0.82]
-    # Xray dose_Gy = [0.0, 0.1, 1.0]
-    if ((csv_data_frame["particle_type"] == "Fe") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.3, 0.82]))).any():
-        raise Exception("One or more Fe dose values are not valid")
-    
-    if ((csv_data_frame["particle_type"] == "X-ray") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.1, 1.0]))).any():
-        raise Exception("One or more X-ray dose values are not valid")
-    
-    if ((~csv_data_frame["hr_post_exposure"].isin([4, 24, 48]))).any():     # ~ is the bitwise NOT operator. Flips the bits of the operand.
-        raise Exception("One or more exposure values are not valid")
-
-    # Slice DataFrame by attributes of interest
     Fe_dose_gy = {'low': 0.0, 'med': 0.3, 'hi': 0.82}
     Xray_dose_gy = {'low': 0.0, 'med': 0.1, 'hi': 1.0}
 
-    csv_data_frame = csv_data_frame[(csv_data_frame["hr_post_exposure"] == hr_post_exposure_val) & ((csv_data_frame["dose_Gy"] >= Fe_dose_gy[dose_Gy_specifier]) & (csv_data_frame["particle_type"] == "Fe") | (csv_data_frame["dose_Gy"] >= Xray_dose_gy[dose_Gy_specifier]) & (csv_data_frame["particle_type"] == "X-ray"))]
+    if ((csv_data_frame["particle_type"] == "Fe") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.3, 0.82]))).any():
+        raise Exception("One or more Fe dose values are not valid")
 
+    if ((csv_data_frame["particle_type"] == "X-ray") & (~csv_data_frame["dose_Gy"].isin([0.0, 0.1, 1.0]))).any():
+        raise Exception("One or more X-ray dose values are not valid")
 
-    # Write sliced DataFrame to output csv file with same name as input csv file with 
-    # _dose_hr_post_exposure.csv appended
+    if ((~csv_data_frame["hr_post_exposure"].isin([4, 24, 48]))).any():
+        raise Exception("One or more exposure values are not valid")
+
+    # Slice DataFrame by attributes of interest
+    csv_data_frame = csv_data_frame[
+        (csv_data_frame["hr_post_exposure"] == hr_post_exposure_val) &
+        (
+            ((csv_data_frame["particle_type"] == "Fe") & (csv_data_frame["dose_Gy"] == Fe_dose_gy[dose_Gy_specifier])) |
+            ((csv_data_frame["particle_type"] == "X-ray") & (csv_data_frame["dose_Gy"] == Xray_dose_gy[dose_Gy_specifier]))
+        )
+    ]
+
+    # Write sliced DataFrame to output csv file
     file = os.path.splitext(in_csv_path_local)[0]
-    new_file_path = os.path.join(out_dir_csv, file + "_dose_" + dose_Gy_specifier + "_hr_" + str(hr_post_exposure_val) + "_post_exposure.csv")
-
-    # Construct output csv file path using out_dir_csv and the name of the input csv file
-    # with the dose_Gy and hr_post_exposure_val appended to the name of the input csv file
-    # for data versioning. 
+    new_file_path = os.path.join(
+        out_dir_csv,
+        f"{file}_dose_{dose_Gy_specifier}_hr_{hr_post_exposure_val}_post_exposure.csv"
+    )
     csv_data_frame.to_csv(new_file_path)
 
-    # Write sliced DataFrame to output csv file with name constructed above
-    return(new_file_path, csv_data_frame.shape[0])
-    
-    #raise NotImplementedError
+    return new_file_path, csv_data_frame.shape[0]
+
     
 def train_test_split_subset_meta_dose_hr(
         subset_meta_dose_hr_csv_path: str,
