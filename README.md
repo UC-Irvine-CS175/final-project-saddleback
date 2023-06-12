@@ -18,8 +18,10 @@
 # Team Name
 **final-project-saddleback**
 
-- @max9001
-- @campjake
+- Max R.
+- Jake C.
+- Cam W.
+- Jasper D.
 
 ## Quickstart: Files to Run
 
