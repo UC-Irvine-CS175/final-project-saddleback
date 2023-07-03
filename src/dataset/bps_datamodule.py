@@ -20,9 +20,10 @@ import pytorch_lightning as pl
 import pandas as pd
 import numpy as np
 
-import pyprojroot
-from pyprojroot import here
-root = pyprojroot.find_root(pyprojroot.has_dir(".git"))
+# Remove pyprojroot for colab implementation
+# import pyprojroot
+# from pyprojroot import here
+root = "/content/final-project-saddleback/"
 
 import sys
 sys.path.append(str(root))
